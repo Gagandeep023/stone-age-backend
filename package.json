@@ -1,0 +1,66 @@
+{
+  "name": "@gagandeep023/stone-age-backend",
+  "version": "0.1.0",
+  "description": "Stone Age board game backend - game engine, rooms, Socket.IO multiplayer, SQLite persistence",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./backend": {
+      "types": "./dist/backend/index.d.ts",
+      "import": "./dist/backend/index.mjs",
+      "require": "./dist/backend/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.mjs",
+      "require": "./dist/types/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "stone-age",
+    "board-game",
+    "multiplayer",
+    "game-engine",
+    "socket-io",
+    "typescript"
+  ],
+  "author": "Gagandeep Bhatia <gagandeepbhatia2303@gmail.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "express": "^4.0.0",
+    "socket.io": "^4.0.0",
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "uuid": "^11.1.0"
+  }
+}
