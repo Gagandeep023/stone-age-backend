@@ -143,4 +143,34 @@ describe('acceptStarvation', () => {
     const player = newState.players.find(p => p.id === 'player-0')!;
     expect(player.hasFed).toBe(true);
   });
+
+  it('returns food to supplyFood', () => {
+    const state = createTestGame();
+    state.players[0].resources.food = 4;
+    const initialSupply = state.supplyFood;
+
+    const newState = acceptStarvation(state, 'player-0');
+    expect(newState.supplyFood).toBe(initialSupply + 4);
+  });
+});
+
+describe('food return to supply', () => {
+  it('feedWorkers returns spent food to supplyFood', () => {
+    const state = createTestGame();
+    // Player has 12 food, 5 workers, will spend 5 food
+    const initialSupply = state.supplyFood;
+    const newState = feedWorkers(state, 'player-0');
+    // 5 food spent should return to supply
+    expect(newState.supplyFood).toBe(initialSupply + 5);
+  });
+
+  it('feedWorkers starvation returns all food to supply', () => {
+    const state = createTestGame();
+    state.players[0].resources.food = 3; // not enough for 5 workers
+    const initialSupply = state.supplyFood;
+
+    const newState = feedWorkers(state, 'player-0');
+    // All 3 food returned to supply
+    expect(newState.supplyFood).toBe(initialSupply + 3);
+  });
 });

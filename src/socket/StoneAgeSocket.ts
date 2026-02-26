@@ -135,6 +135,16 @@ export function createStoneAgeSocket(
       }
     });
 
+    socket.on('endGame', () => {
+      const result = roomManager.endGame(data.userId);
+      if (result) {
+        nsp.to(result.room.id).emit('gameEnded', { reason: 'Host ended the game' });
+        broadcastRoomList();
+      } else {
+        socket.emit('error', { message: 'Only the host can end the game' });
+      }
+    });
+
     socket.on('startGame', () => {
       const room = roomManager.getRoomByPlayer(data.userId);
       if (!room) {
@@ -275,6 +285,33 @@ export function createStoneAgeSocket(
         type: 'chooseDiceReward',
         playerId: data.userId,
         choice,
+      });
+    });
+
+    socket.on('chooseFlexResources', ({ resources }) => {
+      processGameAction(socket, {
+        type: 'chooseFlexResources',
+        playerId: data.userId,
+        resources,
+      });
+    });
+
+    socket.on('chooseResourceDiceType', ({ resource }) => {
+      processGameAction(socket, {
+        type: 'chooseResourceDiceType',
+        playerId: data.userId,
+        resource,
+      });
+    });
+
+    socket.on('sendChat', ({ message, emote }) => {
+      const room = roomManager.getRoomByPlayer(data.userId);
+      if (!room) return;
+      nsp.to(room.id).emit('chat', {
+        playerId: data.userId,
+        playerName: data.userName,
+        message: message.slice(0, 100),
+        emote,
       });
     });
 

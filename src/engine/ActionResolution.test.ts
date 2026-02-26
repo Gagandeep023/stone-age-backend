@@ -9,9 +9,13 @@ import {
   resolveField,
   resolveBuilding,
   skipAction,
+  validateDiceForItemsChoice,
+  handleDiceForItemsChoice,
+  handleFlexResourcesChoice,
+  handleResourceDiceChoice,
 } from './ActionResolution.js';
 import { createInitialGameState } from './GameSetup.js';
-import type { GameState } from '../types/index.js';
+import type { GameState, DiceForItemsChoice } from '../types/index.js';
 
 function createActionPhaseGame(playerCount = 2): GameState {
   const players = Array.from({ length: playerCount }, (_, i) => ({
@@ -340,6 +344,185 @@ describe('ActionResolution', () => {
       expect(newState.players[0].unresolvedLocations).not.toContain('forest');
       expect(newState.players[0].resources.food).toBe(initialFood);
       expect(newState.players[0].resources.wood).toBe(initialWood);
+    });
+  });
+
+  describe('food supply tracking', () => {
+    it('caps food gathering by supplyFood', () => {
+      const state = createActionPhaseGame();
+      state.supplyFood = 1; // only 1 food in supply
+      let newState = resolveResourceLocation(state, 'player-0', 'huntingGrounds');
+      // Force a high dice roll
+      newState.players[0].currentDiceRoll!.resourcesEarned = 5;
+      newState = confirmResourceGathering(newState, 'player-0');
+      // Should be capped to 1 (supplyFood)
+      expect(newState.players[0].resources.food).toBe(12 + 1); // initial 12 + 1
+      expect(newState.supplyFood).toBe(0);
+    });
+
+    it('deducts food from supplyFood when gathering food', () => {
+      const state = createActionPhaseGame();
+      const initialSupplyFood = state.supplyFood;
+      let newState = resolveResourceLocation(state, 'player-0', 'huntingGrounds');
+      const earned = newState.players[0].currentDiceRoll!.resourcesEarned;
+      newState = confirmResourceGathering(newState, 'player-0');
+      expect(newState.supplyFood).toBe(initialSupplyFood - earned);
+    });
+  });
+
+  describe('validateDiceForItemsChoice', () => {
+    it('die 1-2: allows any resource', () => {
+      expect(validateDiceForItemsChoice(1, { type: 'resource', resource: 'wood' }).valid).toBe(true);
+      expect(validateDiceForItemsChoice(2, { type: 'resource', resource: 'gold' }).valid).toBe(true);
+    });
+
+    it('die 1-2: rejects tool or foodProduction', () => {
+      expect(validateDiceForItemsChoice(1, { type: 'tool' }).valid).toBe(false);
+      expect(validateDiceForItemsChoice(2, { type: 'foodProduction' }).valid).toBe(false);
+    });
+
+    it('die 3: must be stone', () => {
+      expect(validateDiceForItemsChoice(3, { type: 'resource', resource: 'stone' }).valid).toBe(true);
+      expect(validateDiceForItemsChoice(3, { type: 'resource', resource: 'wood' }).valid).toBe(false);
+      expect(validateDiceForItemsChoice(3, { type: 'tool' }).valid).toBe(false);
+    });
+
+    it('die 4: must be gold', () => {
+      expect(validateDiceForItemsChoice(4, { type: 'resource', resource: 'gold' }).valid).toBe(true);
+      expect(validateDiceForItemsChoice(4, { type: 'resource', resource: 'brick' }).valid).toBe(false);
+    });
+
+    it('die 5: must be tool', () => {
+      expect(validateDiceForItemsChoice(5, { type: 'tool' }).valid).toBe(true);
+      expect(validateDiceForItemsChoice(5, { type: 'resource', resource: 'wood' }).valid).toBe(false);
+    });
+
+    it('die 6: must be foodProduction', () => {
+      expect(validateDiceForItemsChoice(6, { type: 'foodProduction' }).valid).toBe(true);
+      expect(validateDiceForItemsChoice(6, { type: 'tool' }).valid).toBe(false);
+    });
+  });
+
+  describe('handleDiceForItemsChoice', () => {
+    it('rejects invalid choice for die value', () => {
+      const state = createActionPhaseGame();
+      state.pendingDiceForItems = {
+        cardPlayerId: 'player-0',
+        dice: [5, 3], // player-0 rolled 5 (must be tool), player-1 rolled 3 (must be stone)
+        playerChoices: { 'player-1': { type: 'resource', resource: 'stone' } },
+      };
+      // Player-0 tries to choose resource instead of tool - should be rejected
+      const newState = handleDiceForItemsChoice(state, 'player-0', { type: 'resource', resource: 'wood' });
+      expect(newState.pendingDiceForItems).not.toBeNull();
+      expect(newState.pendingDiceForItems!.playerChoices['player-0']).toBeUndefined();
+    });
+
+    it('accepts valid choice and resolves when all players chose', () => {
+      const state = createActionPhaseGame();
+      state.pendingDiceForItems = {
+        cardPlayerId: 'player-0',
+        dice: [1, 2], // both can choose any resource
+        playerChoices: {},
+      };
+      let newState = handleDiceForItemsChoice(state, 'player-0', { type: 'resource', resource: 'wood' });
+      expect(newState.pendingDiceForItems).not.toBeNull(); // still waiting for player-1
+      newState = handleDiceForItemsChoice(newState, 'player-1', { type: 'resource', resource: 'brick' });
+      expect(newState.pendingDiceForItems).toBeNull(); // all resolved
+      expect(newState.players[0].resources.wood).toBe(1); // gained 1 wood
+      expect(newState.players[1].resources.brick).toBe(1); // gained 1 brick
+    });
+  });
+
+  describe('handleFlexResourcesChoice', () => {
+    it('grants chosen resources and clears pending state', () => {
+      const state = createActionPhaseGame();
+      state.pendingFlexResources = {
+        playerId: 'player-0',
+        amount: 2,
+        chosen: null,
+      };
+      const newState = handleFlexResourcesChoice(state, 'player-0', { wood: 1, brick: 1 });
+      expect(newState.pendingFlexResources).toBeNull();
+      expect(newState.players[0].resources.wood).toBe(1);
+      expect(newState.players[0].resources.brick).toBe(1);
+    });
+
+    it('rejects if total does not match amount', () => {
+      const state = createActionPhaseGame();
+      state.pendingFlexResources = {
+        playerId: 'player-0',
+        amount: 2,
+        chosen: null,
+      };
+      const newState = handleFlexResourcesChoice(state, 'player-0', { wood: 1 }); // only 1, needs 2
+      expect(newState.pendingFlexResources).not.toBeNull(); // not cleared
+    });
+
+    it('rejects if resource exceeds supply', () => {
+      const state = createActionPhaseGame();
+      state.supply.gold = 0; // no gold in supply
+      state.pendingFlexResources = {
+        playerId: 'player-0',
+        amount: 1,
+        chosen: null,
+      };
+      const newState = handleFlexResourcesChoice(state, 'player-0', { gold: 1 });
+      expect(newState.pendingFlexResources).not.toBeNull();
+    });
+
+    it('deducts from supply', () => {
+      const state = createActionPhaseGame();
+      const initialWood = state.supply.wood;
+      state.pendingFlexResources = {
+        playerId: 'player-0',
+        amount: 2,
+        chosen: null,
+      };
+      const newState = handleFlexResourcesChoice(state, 'player-0', { wood: 2 });
+      expect(newState.supply.wood).toBe(initialWood - 2);
+    });
+  });
+
+  describe('handleResourceDiceChoice', () => {
+    it('grants resources based on chosen type divisor', () => {
+      const state = createActionPhaseGame();
+      state.pendingResourceDice = {
+        playerId: 'player-0',
+        dice: [3, 4, 5],
+        total: 12,
+        chosenResource: null,
+      };
+      // Choose wood (divisor 3): 12/3 = 4 wood
+      const newState = handleResourceDiceChoice(state, 'player-0', 'wood');
+      expect(newState.pendingResourceDice).toBeNull();
+      expect(newState.players[0].resources.wood).toBe(4);
+    });
+
+    it('caps by supply', () => {
+      const state = createActionPhaseGame();
+      state.supply.gold = 1;
+      state.pendingResourceDice = {
+        playerId: 'player-0',
+        dice: [6, 6, 6],
+        total: 18,
+        chosenResource: null,
+      };
+      // Choose gold (divisor 6): 18/6 = 3, but supply only has 1
+      const newState = handleResourceDiceChoice(state, 'player-0', 'gold');
+      expect(newState.players[0].resources.gold).toBe(1);
+      expect(newState.supply.gold).toBe(0);
+    });
+
+    it('ignores wrong player', () => {
+      const state = createActionPhaseGame();
+      state.pendingResourceDice = {
+        playerId: 'player-0',
+        dice: [3],
+        total: 3,
+        chosenResource: null,
+      };
+      const newState = handleResourceDiceChoice(state, 'player-1', 'wood');
+      expect(newState.pendingResourceDice).not.toBeNull(); // not cleared
     });
   });
 });

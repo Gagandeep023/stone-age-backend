@@ -59,6 +59,7 @@ export function feedWorkers(
 
     const foodUsed = Math.min(remaining, player.resources.food);
     player.resources.food -= foodUsed;
+    newState.supplyFood += foodUsed;
     remaining -= foodUsed;
 
     // Use resources as food
@@ -82,6 +83,7 @@ export function feedWorkers(
     });
   } else {
     // Starvation: lose all food and chosen resources, take -10 VP
+    newState.supplyFood += player.resources.food;
     player.resources.food = 0;
 
     if (resourcesAsFood) {
@@ -127,7 +129,8 @@ export function acceptStarvation(
   const newState = structuredClone(state);
   const player = newState.players.find(p => p.id === playerId)!;
 
-  // Return all food
+  // Return all food to supply
+  newState.supplyFood += player.resources.food;
   player.resources.food = 0;
 
   // Apply penalty

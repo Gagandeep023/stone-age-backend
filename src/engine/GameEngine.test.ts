@@ -198,6 +198,75 @@ describe('GameEngine', () => {
       const result = GameEngine.processAction(state, action);
       expect(result.error).toBe('Unknown action type');
     });
+
+    it('blocks actions when pendingFlexResources is set', () => {
+      const state = create2PlayerGame();
+      state.pendingFlexResources = {
+        playerId: 'p0',
+        amount: 2,
+        chosen: null,
+      };
+      // Try to place workers - should be blocked
+      const result = GameEngine.processAction(state, {
+        type: 'placeWorkers',
+        playerId: 'p0',
+        location: 'forest',
+        count: 2,
+      });
+      expect(result.error).toBe('Waiting for player to choose flex resources');
+    });
+
+    it('accepts chooseFlexResources when pendingFlexResources is set', () => {
+      const state = create2PlayerGame();
+      state.pendingFlexResources = {
+        playerId: 'p0',
+        amount: 2,
+        chosen: null,
+      };
+      const result = GameEngine.processAction(state, {
+        type: 'chooseFlexResources',
+        playerId: 'p0',
+        resources: { wood: 1, brick: 1 },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.state.pendingFlexResources).toBeNull();
+    });
+
+    it('blocks actions when pendingResourceDice is set', () => {
+      const state = create2PlayerGame();
+      state.pendingResourceDice = {
+        playerId: 'p0',
+        dice: [3, 4],
+        total: 7,
+        chosenResource: null,
+      };
+      const result = GameEngine.processAction(state, {
+        type: 'placeWorkers',
+        playerId: 'p0',
+        location: 'forest',
+        count: 2,
+      });
+      expect(result.error).toBe('Waiting for player to choose resource type for dice');
+    });
+
+    it('accepts chooseResourceDiceType when pendingResourceDice is set', () => {
+      const state = create2PlayerGame();
+      state.pendingResourceDice = {
+        playerId: 'p0',
+        dice: [3, 4],
+        total: 7,
+        chosenResource: null,
+      };
+      const result = GameEngine.processAction(state, {
+        type: 'chooseResourceDiceType',
+        playerId: 'p0',
+        resource: 'wood',
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.state.pendingResourceDice).toBeNull();
+      // wood divisor = 3, total = 7, floor(7/3) = 2
+      expect(result.state.players[0].resources.wood).toBe(2);
+    });
   });
 
   describe('full mini-game flow', () => {

@@ -1,6 +1,7 @@
 import type {
   GameState, LocationId, ResourceType, ValidationResult,
   DiceRollState, DiceForItemsState, DiceForItemsChoice, CivilizationCard,
+  PendingFlexResources, PendingResourceDice,
 } from '../types/index.js';
 import {
   RESOURCE_DIVISORS, RESOURCE_VALUES, LOCATION_RESOURCE_MAP,
@@ -156,7 +157,10 @@ export function confirmResourceGathering(
   let earned = roll.resourcesEarned;
 
   if (resourceKey === 'food') {
+    // Cap by food supply
+    earned = Math.min(earned, newState.supplyFood);
     player.resources.food += earned;
+    newState.supplyFood -= earned;
     newState.log.push({
       timestamp: Date.now(),
       playerId,
@@ -435,9 +439,12 @@ function applyImmediateEffect(
   const effect = card.immediateEffect;
 
   switch (effect.type) {
-    case 'food':
-      player.resources.food += effect.amount;
+    case 'food': {
+      const foodToGain = Math.min(effect.amount, state.supplyFood);
+      player.resources.food += foodToGain;
+      state.supplyFood -= foodToGain;
       break;
+    }
 
     case 'resource':
       const available = state.supply[effect.resource];
@@ -473,6 +480,12 @@ function applyImmediateEffect(
       if (state.civilizationDeck.length > 0) {
         const drawn = state.civilizationDeck.shift()!;
         player.civilizationCards.push(drawn);
+        state.log.push({
+          timestamp: Date.now(),
+          playerId: player.id,
+          message: `${player.name} drew an extra civilization card`,
+          type: 'card',
+        });
       }
       break;
 
@@ -481,41 +494,62 @@ function applyImmediateEffect(
       break;
 
     case 'flexResources':
-      // Player gets to choose resources - for simplicity, grant wood by default
-      // In real implementation this would need player interaction
-      const flexAmount = Math.min(effect.amount, state.supply.wood);
-      player.resources.wood += flexAmount;
-      state.supply.wood -= flexAmount;
+      // Set pending state so the player can choose which resources
+      state.pendingFlexResources = {
+        playerId: player.id,
+        amount: effect.amount,
+        chosen: null,
+      };
       break;
 
     case 'resourceDice': {
-      // Roll dice and convert to resources
+      // Roll dice, then let the player choose which resource type
       const dice = [];
       for (let i = 0; i < effect.diceCount; i++) {
         dice.push(Math.floor(Math.random() * 6) + 1);
       }
       const total = dice.reduce((s, d) => s + d, 0);
-      // Player gets to choose which resource - default to highest value affordable
-      const resourcesFromDice = calculateResources(total, RESOURCE_DIVISORS.wood);
-      const gained = Math.min(resourcesFromDice, state.supply.wood);
-      player.resources.wood += gained;
-      state.supply.wood -= gained;
+      state.pendingResourceDice = {
+        playerId: player.id,
+        dice,
+        total,
+        chosenResource: null,
+      };
       break;
     }
 
     case 'diceForItems': {
       // All players roll one die each and pick a reward
-      // This is handled via pendingDiceForItems state
       const diceResults: number[] = [];
       for (let i = 0; i < state.players.length; i++) {
         diceResults.push(Math.floor(Math.random() * 6) + 1);
       }
+      const playerChoices: Record<string, DiceForItemsChoice | null> = {};
+
+      // Auto-resolve forced choices (die 3-6)
+      for (let i = 0; i < state.players.length; i++) {
+        const forced = getForcedDiceForItemsChoice(diceResults[i]);
+        playerChoices[state.players[i].id] = forced;
+      }
+
       state.pendingDiceForItems = {
         cardPlayerId: player.id,
         dice: diceResults,
-        playerChoices: {},
+        playerChoices,
       };
-      // Choices will be resolved when all players respond
+
+      // If all choices are forced, apply immediately
+      const allResolved = Object.values(playerChoices).every(c => c !== null);
+      if (allResolved) {
+        applyDiceForItemsChoices(state);
+      }
+
+      state.log.push({
+        timestamp: Date.now(),
+        playerId: player.id,
+        message: `${player.name} triggered dice-for-items: rolled [${diceResults.join(', ')}]`,
+        type: 'dice',
+      });
       break;
     }
   }
@@ -555,6 +589,63 @@ export function skipAction(
 }
 
 /**
+ * Validate that a dice-for-items choice is valid for the given die value.
+ * Die 1-2: any resource (wood/brick/stone/gold)
+ * Die 3: must be stone
+ * Die 4: must be gold
+ * Die 5: must be tool
+ * Die 6: must be food production
+ */
+export function validateDiceForItemsChoice(
+  dieValue: number,
+  choice: DiceForItemsChoice,
+): ValidationResult {
+  switch (dieValue) {
+    case 1:
+    case 2:
+      if (choice.type !== 'resource') {
+        return { valid: false, error: `Die value ${dieValue}: must choose a resource` };
+      }
+      return { valid: true };
+    case 3:
+      if (choice.type !== 'resource' || choice.resource !== 'stone') {
+        return { valid: false, error: 'Die value 3: must choose stone' };
+      }
+      return { valid: true };
+    case 4:
+      if (choice.type !== 'resource' || choice.resource !== 'gold') {
+        return { valid: false, error: 'Die value 4: must choose gold' };
+      }
+      return { valid: true };
+    case 5:
+      if (choice.type !== 'tool') {
+        return { valid: false, error: 'Die value 5: must choose tool' };
+      }
+      return { valid: true };
+    case 6:
+      if (choice.type !== 'foodProduction') {
+        return { valid: false, error: 'Die value 6: must choose food production' };
+      }
+      return { valid: true };
+    default:
+      return { valid: false, error: `Invalid die value: ${dieValue}` };
+  }
+}
+
+/**
+ * Get the forced choice for a die value (3-6 are forced), or null if player can choose (1-2).
+ */
+function getForcedDiceForItemsChoice(dieValue: number): DiceForItemsChoice | null {
+  switch (dieValue) {
+    case 3: return { type: 'resource', resource: 'stone' };
+    case 4: return { type: 'resource', resource: 'gold' };
+    case 5: return { type: 'tool' };
+    case 6: return { type: 'foodProduction' };
+    default: return null;
+  }
+}
+
+/**
  * Handle dice-for-items choice from a player
  */
 export function handleDiceForItemsChoice(
@@ -566,51 +657,143 @@ export function handleDiceForItemsChoice(
   const pending = newState.pendingDiceForItems;
   if (!pending) return newState;
 
+  // Find player's die value
+  const playerIdx = newState.players.findIndex(p => p.id === playerId);
+  if (playerIdx === -1) return newState;
+  const dieValue = pending.dice[playerIdx];
+
+  // Validate the choice against the die value
+  const validation = validateDiceForItemsChoice(dieValue, choice);
+  if (!validation.valid) return newState;
+
   pending.playerChoices[playerId] = choice;
 
   // Check if all players have chosen
   if (Object.keys(pending.playerChoices).length === newState.players.length) {
-    // Apply all choices
-    for (const player of newState.players) {
-      const playerChoice = pending.playerChoices[player.id];
-      if (!playerChoice) continue;
+    applyDiceForItemsChoices(newState);
+  }
 
-      const playerIdx = newState.players.indexOf(player);
-      const dieValue = pending.dice[playerIdx];
+  return newState;
+}
 
-      switch (playerChoice.type) {
-        case 'resource': {
-          // Die value 1-3: wood/brick/stone based on value
-          // Die value 4: gold, 5: tool upgrade, 6: food production
-          const resAmount = 1;
-          const available = newState.supply[playerChoice.resource];
-          const gained = Math.min(resAmount, available);
-          player.resources[playerChoice.resource] += gained;
-          newState.supply[playerChoice.resource] -= gained;
-          break;
+/**
+ * Apply all dice-for-items choices and clear the pending state
+ */
+function applyDiceForItemsChoices(state: GameState): void {
+  const pending = state.pendingDiceForItems;
+  if (!pending) return;
+
+  for (const player of state.players) {
+    const playerChoice = pending.playerChoices[player.id];
+    if (!playerChoice) continue;
+
+    switch (playerChoice.type) {
+      case 'resource': {
+        const available = state.supply[playerChoice.resource];
+        const gained = Math.min(1, available);
+        player.resources[playerChoice.resource] += gained;
+        state.supply[playerChoice.resource] -= gained;
+        break;
+      }
+      case 'tool': {
+        if (player.tools.length < MAX_TOOL_SLOTS) {
+          player.tools.push({ level: 1, usedThisRound: false });
+        } else {
+          const upgradeable = player.tools
+            .filter(t => t.level < MAX_TOOL_LEVEL)
+            .sort((a, b) => a.level - b.level);
+          if (upgradeable.length > 0) upgradeable[0].level++;
         }
-        case 'tool': {
-          if (player.tools.length < MAX_TOOL_SLOTS) {
-            player.tools.push({ level: 1, usedThisRound: false });
-          } else {
-            const upgradeable = player.tools
-              .filter(t => t.level < MAX_TOOL_LEVEL)
-              .sort((a, b) => a.level - b.level);
-            if (upgradeable.length > 0) upgradeable[0].level++;
-          }
-          break;
+        break;
+      }
+      case 'foodProduction': {
+        if (player.foodProduction < MAX_FOOD_PRODUCTION) {
+          player.foodProduction++;
         }
-        case 'foodProduction': {
-          if (player.foodProduction < MAX_FOOD_PRODUCTION) {
-            player.foodProduction++;
-          }
-          break;
-        }
+        break;
       }
     }
-
-    newState.pendingDiceForItems = null;
   }
+
+  state.pendingDiceForItems = null;
+}
+
+/**
+ * Handle flex resources choice from a player
+ */
+export function handleFlexResourcesChoice(
+  state: GameState,
+  playerId: string,
+  resources: Partial<Record<ResourceType, number>>,
+): GameState {
+  const newState = structuredClone(state);
+  const pending = newState.pendingFlexResources;
+  if (!pending || pending.playerId !== playerId) return newState;
+
+  // Validate total equals the required amount
+  const totalChosen = Object.values(resources).reduce((s, v) => s + (v || 0), 0);
+  if (totalChosen !== pending.amount) return newState;
+
+  // Validate each resource type is valid and doesn't exceed supply
+  for (const [res, amount] of Object.entries(resources)) {
+    if (amount && amount > 0) {
+      const resType = res as ResourceType;
+      if (!['wood', 'brick', 'stone', 'gold'].includes(resType)) return newState;
+      if (amount > newState.supply[resType]) return newState;
+    }
+  }
+
+  // Grant resources
+  const player = newState.players.find(p => p.id === playerId)!;
+  for (const [res, amount] of Object.entries(resources)) {
+    if (amount && amount > 0) {
+      const resType = res as ResourceType;
+      player.resources[resType] += amount;
+      newState.supply[resType] -= amount;
+    }
+  }
+
+  newState.pendingFlexResources = null;
+
+  newState.log.push({
+    timestamp: Date.now(),
+    playerId,
+    message: `${player.name} chose flex resources: ${Object.entries(resources).filter(([, v]) => v && v > 0).map(([r, v]) => `${v} ${r}`).join(', ')}`,
+    type: 'resource',
+  });
+
+  return newState;
+}
+
+/**
+ * Handle resource dice type choice from a player
+ */
+export function handleResourceDiceChoice(
+  state: GameState,
+  playerId: string,
+  resource: ResourceType,
+): GameState {
+  const newState = structuredClone(state);
+  const pending = newState.pendingResourceDice;
+  if (!pending || pending.playerId !== playerId) return newState;
+
+  const divisor = RESOURCE_DIVISORS[resource];
+  const earned = calculateResources(pending.total, divisor);
+  const available = newState.supply[resource];
+  const gained = Math.min(earned, available);
+
+  const player = newState.players.find(p => p.id === playerId)!;
+  player.resources[resource] += gained;
+  newState.supply[resource] -= gained;
+
+  newState.log.push({
+    timestamp: Date.now(),
+    playerId,
+    message: `${player.name} chose ${resource} from resource dice: rolled [${pending.dice.join(', ')}] = ${pending.total}, gained ${gained} ${resource}`,
+    type: 'resource',
+  });
+
+  newState.pendingResourceDice = null;
 
   return newState;
 }
@@ -676,9 +859,11 @@ function transitionToFeeding(state: GameState): void {
     player.hasFed = false;
   }
 
-  // Apply food production to all players
+  // Apply food production to all players, capped by food supply
   for (const player of state.players) {
-    player.resources.food += player.foodProduction;
+    const foodFromProduction = Math.min(player.foodProduction, state.supplyFood);
+    player.resources.food += foodFromProduction;
+    state.supplyFood -= foodFromProduction;
   }
 
   state.log.push({

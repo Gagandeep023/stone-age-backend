@@ -77,9 +77,18 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return null;
 
+    // Always clear player mapping so auto-rejoin doesn't trigger
+    this.playerRooms.delete(playerId);
+
+    // Clear any disconnect timer
+    const timer = this.disconnectTimers.get(playerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(playerId);
+    }
+
     if (room.status === 'waiting') {
       room.players = room.players.filter(p => p.id !== playerId);
-      this.playerRooms.delete(playerId);
 
       // If room is empty, remove it
       if (room.players.length === 0) {
@@ -92,12 +101,47 @@ export class RoomManager {
         room.hostId = room.players[0].id;
       }
     } else if (room.status === 'playing') {
-      // Mark as disconnected but keep in game
+      // Mark as disconnected/abandoned (player forfeits turns)
       const player = room.players.find(p => p.id === playerId);
       if (player) player.connected = false;
+
+      // If no connected players remain, end the game
+      const connected = room.players.filter(p => p.connected);
+      if (connected.length === 0) {
+        room.status = 'finished';
+        this.rooms.delete(roomId);
+        return { room, removed: true };
+      }
     }
 
     return { room, removed: false };
+  }
+
+  endGame(hostId: string): { room: GameRoom } | null {
+    const roomId = this.playerRooms.get(hostId);
+    if (!roomId) return null;
+
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    // Only host can end the game
+    if (room.hostId !== hostId) return null;
+    if (room.status !== 'playing') return null;
+
+    room.status = 'finished';
+
+    // Clear all player mappings and timers
+    for (const player of room.players) {
+      this.playerRooms.delete(player.id);
+      const timer = this.disconnectTimers.get(player.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.disconnectTimers.delete(player.id);
+      }
+    }
+
+    this.rooms.delete(roomId);
+    return { room };
   }
 
   startGame(roomId: string, hostId: string): { room: GameRoom; gameState: GameState } | null {

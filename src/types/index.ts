@@ -206,6 +206,21 @@ export interface BoardState {
 
 export type GamePhase = 'workerPlacement' | 'actionResolution' | 'feeding';
 
+// --- Pending Interactive Choices ---
+
+export interface PendingFlexResources {
+  playerId: string;
+  amount: number;
+  chosen: Partial<Record<ResourceType, number>> | null;
+}
+
+export interface PendingResourceDice {
+  playerId: string;
+  dice: number[];
+  total: number;
+  chosenResource: ResourceType | null;
+}
+
 // --- Game State ---
 
 export interface ResourceSupply {
@@ -235,8 +250,10 @@ export interface GameState {
   // Village blocking for 2-3 players
   blockedVillageLocation: VillageLocation | null;
 
-  // Action resolution sub-state
+  // Action resolution sub-states
   pendingDiceForItems: DiceForItemsState | null;
+  pendingFlexResources: PendingFlexResources | null;
+  pendingResourceDice: PendingResourceDice | null;
 
   // Game log
   log: GameLogEntry[];
@@ -339,6 +356,10 @@ export interface ClientToServerEvents {
   feedWorkers: (data: { resourcesAsFood?: Partial<Record<ResourceType, number>> }) => void;
   acceptStarvation: () => void;
   chooseDiceReward: (data: { choice: DiceForItemsChoice }) => void;
+  chooseFlexResources: (data: { resources: Partial<Record<ResourceType, number>> }) => void;
+  chooseResourceDiceType: (data: { resource: ResourceType }) => void;
+  sendChat: (data: { message: string; emote?: string }) => void;
+  endGame: () => void;
 }
 
 export interface ServerToClientEvents {
@@ -353,6 +374,8 @@ export interface ServerToClientEvents {
   playerDisconnected: (data: { playerId: string }) => void;
   playerReconnected: (data: { playerId: string }) => void;
   notification: (data: { message: string }) => void;
+  gameEnded: (data: { reason: string }) => void;
+  chat: (data: { playerId: string; playerName: string; message: string; emote?: string }) => void;
 }
 
 // --- Validation ---

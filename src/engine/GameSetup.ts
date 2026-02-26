@@ -5,7 +5,7 @@ import type {
 import {
   PLAYER_COLORS, LOCATION_MAX_WORKERS,
 } from '../types/index.js';
-import { INITIAL_WORKERS, INITIAL_FOOD, BUILDING_STACK_SIZE, CARD_DISPLAY_SIZE } from '../data/constants.js';
+import { INITIAL_WORKERS, INITIAL_FOOD, BUILDING_STACK_SIZE, CARD_DISPLAY_SIZE, INITIAL_FOOD_SUPPLY } from '../data/constants.js';
 import { INITIAL_SUPPLY } from '../types/index.js';
 import { createBuildingStacks } from '../data/buildings.js';
 import { createShuffledDeck } from '../data/civilizationCards.js';
@@ -79,12 +79,14 @@ export function createInitialGameState(
     ),
     buildingStacks,
     supply,
-    supplyFood: 1000, // effectively unlimited
+    supplyFood: INITIAL_FOOD_SUPPLY,
     gameOver: false,
     winner: null,
     finalScores: null,
     blockedVillageLocation: getBlockedVillageLocation(playerCount, 1),
     pendingDiceForItems: null,
+    pendingFlexResources: null,
+    pendingResourceDice: null,
     log: [{
       timestamp: Date.now(),
       message: `Game started with ${playerCount} players`,

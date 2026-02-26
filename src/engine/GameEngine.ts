@@ -17,6 +17,8 @@ import {
   confirmResourceGathering,
   skipAction,
   handleDiceForItemsChoice,
+  handleFlexResourcesChoice,
+  handleResourceDiceChoice,
 } from './ActionResolution.js';
 import { validateFeeding, feedWorkers, acceptStarvation } from './Feeding.js';
 import { calculateFinalScores, determineWinner } from './Scoring.js';
@@ -32,7 +34,9 @@ export type GameAction =
   | { type: 'skipAction'; playerId: string; location: LocationId }
   | { type: 'feedWorkers'; playerId: string; resourcesAsFood?: Partial<Record<ResourceType, number>> }
   | { type: 'acceptStarvation'; playerId: string }
-  | { type: 'chooseDiceReward'; playerId: string; choice: DiceForItemsChoice };
+  | { type: 'chooseDiceReward'; playerId: string; choice: DiceForItemsChoice }
+  | { type: 'chooseFlexResources'; playerId: string; resources: Partial<Record<ResourceType, number>> }
+  | { type: 'chooseResourceDiceType'; playerId: string; resource: ResourceType };
 
 /**
  * Main game engine - processes actions and returns new state
@@ -64,6 +68,24 @@ export class GameEngine {
         return { state: newState };
       }
       return { state, error: 'Waiting for all players to choose dice rewards' };
+    }
+
+    // Handle pending flex resources choice
+    if (state.pendingFlexResources) {
+      if (action.type === 'chooseFlexResources') {
+        const newState = handleFlexResourcesChoice(state, action.playerId, action.resources);
+        return { state: newState };
+      }
+      return { state, error: 'Waiting for player to choose flex resources' };
+    }
+
+    // Handle pending resource dice choice
+    if (state.pendingResourceDice) {
+      if (action.type === 'chooseResourceDiceType') {
+        const newState = handleResourceDiceChoice(state, action.playerId, action.resource);
+        return { state: newState };
+      }
+      return { state, error: 'Waiting for player to choose resource type for dice' };
     }
 
     switch (action.type) {

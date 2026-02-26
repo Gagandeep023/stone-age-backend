@@ -120,5 +120,20 @@ describe('GameSetup', () => {
       const state = createInitialGameState('test', makePlayers(2));
       expect(state.log.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('initializes supplyFood to 58', () => {
+      const state = createInitialGameState('test', makePlayers(2));
+      expect(state.supplyFood).toBe(58);
+    });
+
+    it('initializes pendingFlexResources as null', () => {
+      const state = createInitialGameState('test', makePlayers(2));
+      expect(state.pendingFlexResources).toBeNull();
+    });
+
+    it('initializes pendingResourceDice as null', () => {
+      const state = createInitialGameState('test', makePlayers(2));
+      expect(state.pendingResourceDice).toBeNull();
+    });
   });
 });
