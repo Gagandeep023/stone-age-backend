@@ -1,6 +1,6 @@
 {
   "name": "@gagandeep023/stone-age-backend",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Stone Age board game backend - game engine, rooms, Socket.IO multiplayer, SQLite persistence",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
