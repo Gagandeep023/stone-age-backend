@@ -55,7 +55,8 @@ npm install express socket.io better-sqlite3
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { setupStoneAgeBackend } from '@gagandeep023/stone-age-backend/backend';
+import { setupStoneAgeBackend }
+  from '@gagandeep023/stone-age-backend/backend';
 
 const app = express();
 const httpServer = createServer(app);
@@ -258,13 +259,16 @@ Tables are created automatically on first connection.
 
 ```typescript
 // Main export - game engine + room manager
-import { GameEngine, RoomManager } from '@gagandeep023/stone-age-backend';
+import { GameEngine, RoomManager }
+  from '@gagandeep023/stone-age-backend';
 
 // Backend export - Express routes + Socket.IO setup
-import { setupStoneAgeBackend } from '@gagandeep023/stone-age-backend/backend';
+import { setupStoneAgeBackend }
+  from '@gagandeep023/stone-age-backend/backend';
 
 // Types only
-import type { GameState, PlayerState, LocationId } from '@gagandeep023/stone-age-backend/types';
+import type { GameState, PlayerState, LocationId }
+  from '@gagandeep023/stone-age-backend/types';
 ```
 
 ### Subpath Exports
@@ -344,7 +348,7 @@ src/
 │   ├── GameSetup.test.ts
 │   ├── WorkerPlacement.ts    # Placement phase logic
 │   ├── WorkerPlacement.test.ts
-│   ├── ActionResolution.ts   # Action phase logic (dice, buildings, cards)
+│   ├── ActionResolution.ts   # Action phase (dice, buildings, cards)
 │   ├── ActionResolution.test.ts
 │   ├── Feeding.ts            # Feeding phase + round end
 │   ├── Feeding.test.ts
