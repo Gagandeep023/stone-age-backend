@@ -41,6 +41,9 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
+    "gagan",
+    "gagandeep",
+    "gagandeep bhatia",
     "stone-age",
     "board-game",
     "multiplayer",
